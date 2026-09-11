@@ -14,7 +14,7 @@ cd ~/anime_industry_analytics
 python3 scripts/serve.py
 ```
 
-Then open <http://localhost:8100>. Set `PORT` to use a different port.
+open <http://localhost:8100>. Set `PORT` to use a different port.
 
 ## Pages
 
@@ -30,10 +30,8 @@ Then open <http://localhost:8100>. Set `PORT` to use a different port.
 | `models.html` | Five classifiers, ROC/PR curves, confusion matrices, global SHAP, gain importance | precomputed |
 | `forecast.html` | Damped Holt-Winters demand and volume forecasts, with a 2023-2025 backtest | precomputed |
 
-## How it fits together
 
-Descriptive mining is deterministic given the dataset and the saved models, so it is computed
-once at build time and written to `site/anime_data.js`:
+## Descriptive mining is deterministic given the dataset and the saved models, so it is computed once at build time and written to `site/anime_data.js`:
 
 ```bash
 python3 scripts/build_site_data.py
@@ -45,7 +43,7 @@ which is why the site reproduces the book: 8,227 titles, mean 0.500 / sd 0.260, 
 raw score, a 5,165 / 480 / 1,014 chronological split, a success threshold of 0.6946, k = 32
 clusters at silhouette 0.1488, and chi-square = 10,372 with Cramer's V = 0.180.
 
-The two interactive tools cannot be precomputed, so `scripts/serve.py` loads the real model files
+`scripts/serve.py` loads the real model files
 and runs them per request:
 
 - `POST /api/predict` — `FeatureBuilder.transform` then the five classifiers, then
