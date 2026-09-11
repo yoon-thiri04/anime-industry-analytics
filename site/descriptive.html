@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Data — Anime Industry Analytics</title>
+<script src="plotly.min.js"></script>
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('descriptive.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">Chapter 2</div>
+  <h1>The data</h1>
+  <div class="hstats">
+    <div><b id="hRaw">—</b><span>raw records</span></div>
+    <div><b id="hFinal">—</b><span>after cleaning</span></div>
+    <div><b id="hYears">—</b><span>years</span></div>
+    <div><b id="hCorr">—</b><span>r vs raw score</span></div>
+  </div>
+</div></div>
+
+<section>
+  <div class="wrap">
+    <div class="lab ac">Distributions</div>
+    <h2 class="h-sec">Scores are bell-shaped. Audiences are not.</h2>
+    <div class="grid2">
+      <div class="box"><div class="cap">MAL score</div><div class="plot" id="cScore" style="height:230px"></div></div>
+      <div class="box"><div class="cap">Rank</div><div class="plot" id="cRank" style="height:230px"></div></div>
+    </div>
+    <div class="box" style="margin-top:1.2rem">
+      <div class="tbar" style="margin-bottom:.8rem">
+        <div class="cap" style="margin:0">Engagement signals</div>
+        <div class="seg grow" id="segLog" style="margin-left:auto">
+          <button data-k="raw">Linear</button><button data-k="log" class="on">log(1+x)</button></div>
+      </div>
+      <div class="plot" id="cEngage" style="height:280px"></div>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--wash);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="lab ac">Format</div>
+    <h2 class="h-sec">TV, Movie, ONA and OVA are different products</h2>
+    <div class="grid2">
+      <div class="box"><div class="cap">Mean episodes</div><div class="plot" id="cEpisodes" style="height:220px"></div></div>
+      <div class="box"><div class="cap">Mean minutes</div><div class="plot" id="cDuration" style="height:220px"></div></div>
+    </div>
+    <div class="kgrid" style="margin-top:1.2rem" id="formatKpis"></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="lab ac">Outcome metric</div>
+    <h2 class="h-sec">Why balanced_score replaces the raw rating</h2>
+    <div class="grid2">
+      <div class="box"><div class="cap">Composition</div>
+        <table><tbody id="bsTable"></tbody></table></div>
+      <div class="box"><div class="cap">Distribution</div>
+        <div class="plot" id="cBalanced" style="height:225px"></div></div>
+    </div>
+    <div class="grid2" style="margin-top:1.2rem">
+      <div class="box"><div class="cap">Demoted — high rating, low reach</div>
+        <table><thead><tr><th>Title</th><th class="n">Score</th><th class="n">Members</th><th class="n">Balanced</th></tr></thead>
+          <tbody id="demoted"></tbody></table></div>
+      <div class="box"><div class="cap">Promoted — mixed reviews, huge audience</div>
+        <table><thead><tr><th>Title</th><th class="n">Score</th><th class="n">Members</th><th class="n">Balanced</th></tr></thead>
+          <tbody id="promoted"></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--wash);border-top:1px solid var(--line)">
+  <div class="wrap">
+    <div class="lab ac">Market</div>
+    <h2 class="h-sec">Genre release trend, 2010–2025</h2>
+    <div class="box"><div class="plot" id="cTrend" style="height:360px"></div></div>
+    <div class="grid2" style="margin-top:1.2rem">
+      <div class="box"><div class="cap">Studios by mean balanced_score (≥ 10 titles)</div>
+        <div class="plot" id="cStudios" style="height:360px"></div></div>
+      <div class="box"><div class="cap">Source material — volume</div>
+        <div class="plot" id="cSource" style="height:360px"></div></div>
+    </div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const D = ANIME_DATA, G = D.GLOB, $ = id => document.getElementById(id);
+  $('hRaw').textContent = fmtInt(G.raw_records);
+  $('hFinal').textContent = fmtInt(G.records);
+  $('hYears').textContent = G.year_min + '–' + G.year_max;
+  $('hCorr').textContent = G.bscore_corr_score;
+
+  const bar = (h, color) => ({type:'bar', x:h.x, y:h.y, marker:{color},
+    hovertemplate:'%{y:,} titles<extra></extra>'});
+  const L = (o = {}) => ({...LAYOUT, showlegend:false, bargap:.05, ...o});
+  Plotly.newPlot('cScore', [bar(D.DIST.score, C.blue)], L({margin:{l:44,r:10,t:8,b:32}}), PLOTCFG);
+  Plotly.newPlot('cRank', [bar(D.DIST.rank, C.violet)], L({margin:{l:44,r:10,t:8,b:32}}), PLOTCFG);
+
+  let mode = 'log';
+  const drawEngage = () => {
+    const k = mode === 'log' ? '_log' : '_raw';
+    Plotly.react('cEngage', [['members', C.blue], ['scored_by', C.green], ['favorites', C.accent]]
+      .map(([f, c]) => ({...bar(D.DIST[f + k], c), name:f, opacity:.7})),
+      {...LAYOUT, barmode:'overlay', bargap:.05, margin:{l:46,r:10,t:24,b:32},
+       legend:{orientation:'h', y:1.16, x:0, font:{size:10}}}, PLOTCFG);
+  };
+  document.querySelectorAll('#segLog button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#segLog button').forEach(x => x.classList.toggle('on', x === b));
+    mode = b.dataset.k; drawEngage();
+  });
+  drawEngage();
+
+  const F = D.FORMAT.slice().sort((a, b) => b.avg_episodes - a.avg_episodes);
+  Plotly.newPlot('cEpisodes', [{type:'bar', x:F.map(f => f.type), y:F.map(f => f.avg_episodes),
+    marker:{color:SERIES.slice(0, F.length)}, text:F.map(f => f.avg_episodes), texttemplate:'%{text}', textposition:'outside',
+    cliponaxis:false, hovertemplate:'%{x}: %{y}<extra></extra>'}],
+    L({margin:{l:42,r:10,t:18,b:30}}), PLOTCFG);
+  const Fd = D.FORMAT.slice().sort((a, b) => b.avg_duration - a.avg_duration);
+  Plotly.newPlot('cDuration', [{type:'bar', x:Fd.map(f => f.type), y:Fd.map(f => f.avg_duration),
+    marker:{color:SERIES.slice(0, Fd.length)}, text:Fd.map(f => f.avg_duration), texttemplate:'%{text}', textposition:'outside',
+    cliponaxis:false, hovertemplate:'%{x}: %{y} min<extra></extra>'}],
+    L({margin:{l:42,r:10,t:18,b:30}}), PLOTCFG);
+  $('formatKpis').innerHTML = D.FORMAT.map(f =>
+    `<div class="kpi"><div class="n">${fmtInt(f.n)}</div><div class="l">${f.type}</div></div>`).join('');
+
+  $('bsTable').innerHTML = D.BALANCED.weights.map(w =>
+    `<tr><td><code>${w.k}</code></td><td class="n"><b>${w.w}%</b></td>
+      <td class="sub" style="font-size:.76rem">${w.how}</td></tr>`).join('');
+  Plotly.newPlot('cBalanced', [bar(D.DIST.balanced, C.green)],
+    L({margin:{l:44,r:10,t:8,b:32},
+       shapes:[D.BSCORE_BINS.mid_cut, D.BSCORE_BINS.hi_cut].map((v, i) => ({type:'line', x0:v, x1:v,
+         yref:'paper', y0:0, y1:1, line:{color:i ? C.accent : C.ochre, width:1.4, dash:'dot'}}))}), PLOTCFG);
+
+  const row = a => `<tr><td>${esc(a.title)}</td><td class="n">${a.score}</td>
+    <td class="n">${fmtK(a.members)}</td><td class="n"><b>${a.balanced.toFixed(3)}</b></td></tr>`;
+  $('demoted').innerHTML = D.BALANCED.demoted.slice(0, 5).map(row).join('');
+  $('promoted').innerHTML = D.BALANCED.promoted.slice(0, 5).map(row).join('');
+
+  const T = D.GENRE_TREND;
+  Plotly.newPlot('cTrend', Object.entries(T.series).map(([g, v], i) => ({
+    type:'scatter', mode:'lines', name:g, x:T.years, y:v,
+    line:{color:SERIES[i % SERIES.length], width:1.8},
+    hovertemplate:`${g} %{x}: %{y}<extra></extra>`})),
+    {...LAYOUT, margin:{l:46,r:10,t:10,b:56}, xaxis:{...LAYOUT.xaxis, dtick:2},
+     legend:{orientation:'h', y:-.16, font:{size:10}}}, PLOTCFG);
+
+  const S = D.STUDIO_BENCH.slice(0, 14).reverse();
+  Plotly.newPlot('cStudios', [{type:'bar', orientation:'h', y:S.map(r => r.name), x:S.map(r => r.avg_balanced),
+    marker:{color:C.blue}, hovertemplate:'%{y}: %{x:.3f}<extra></extra>'}],
+    L({margin:{l:128,r:16,t:8,b:32}, yaxis:{...LAYOUT.yaxis, tickfont:{size:9.5}}}), PLOTCFG);
+
+  const src = D.TOP.sources.slice(0, 10).reverse();
+  Plotly.newPlot('cSource', [{type:'bar', orientation:'h', y:src.map(s => s.name), x:src.map(s => s.n),
+    marker:{color:C.accent}, hovertemplate:'%{y}: %{x:,}<extra></extra>'}],
+    L({margin:{l:118,r:16,t:8,b:32}, yaxis:{...LAYOUT.yaxis, tickfont:{size:9.5}}}), PLOTCFG);
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Evaluation — Anime Industry Analytics</title>
+<script src="plotly.min.js"></script>
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('models.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">Held-out test split · ≥ 2024</div>
+  <h1>Evaluation</h1>
+  <div class="hstats">
+    <div><b id="hModel">—</b><span>champion</span></div>
+    <div><b id="hAcc">—</b><span>accuracy</span></div>
+    <div><b id="hF1">—</b><span>F1</span></div>
+    <div><b id="hAuc">—</b><span>ROC-AUC</span></div>
+  </div>
+</div></div>
+
+<section style="padding-top:1.8rem">
+  <div class="wrap">
+    <div class="box" style="padding:0;margin-bottom:1.2rem">
+      <table><thead><tr><th>Model</th><th class="n">Acc</th><th class="n">Prec</th>
+        <th class="n">Recall</th><th class="n">F1</th><th class="n">ROC-AUC</th></tr></thead>
+        <tbody id="metricTable"></tbody></table></div>
+
+    <div class="grid2">
+      <div class="box"><div class="cap">ROC curves</div>
+        <div class="plot" id="cRoc" style="height:300px"></div></div>
+      <div class="box"><div class="cap">Precision–recall</div>
+        <div class="plot" id="cPr" style="height:300px"></div></div>
+    </div>
+
+    <div class="box" style="margin-top:1.2rem">
+      <div class="tbar" style="margin-bottom:.9rem">
+        <span class="cap" style="margin:0">Confusion matrix</span>
+        <div class="seg grow" id="segCm" style="margin-left:auto"></div></div>
+      <div class="grid2" style="align-items:center">
+        <div class="plot" id="cCm" style="height:260px"></div>
+        <div class="kgrid" id="cmRead" style="grid-template-columns:1fr 1fr"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--wash);border-top:1px solid var(--line)">
+  <div class="wrap">
+    <div class="lab ac">SHAP</div>
+    <h2 class="h-sec">What the champion model learned</h2>
+    <div class="grid2">
+      <div class="box"><div class="cap">Mean |SHAP|</div>
+        <div class="plot" id="cShapBar" style="height:420px"></div></div>
+      <div class="box"><div class="cap">Beeswarm · colour = feature value</div>
+        <div class="plot" id="cBees" style="height:420px"></div></div>
+    </div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const D = ANIME_DATA, M = D.MODELS, S = D.SHAP, $ = id => document.getElementById(id);
+  const champ = M.metrics.reduce((a, b) => b.f1 > a.f1 ? b : a);
+  $('hModel').textContent = champ.model; $('hAcc').textContent = champ.accuracy.toFixed(3);
+  $('hF1').textContent = champ.f1.toFixed(3); $('hAuc').textContent = champ.roc_auc.toFixed(3);
+
+  const COLS = ['accuracy','precision','recall','f1','roc_auc'];
+  const best = Object.fromEntries(COLS.map(c => [c, Math.max(...M.metrics.map(m => m[c]))]));
+  $('metricTable').innerHTML = M.metrics.map(m =>
+    `<tr class="${m.model === champ.model ? 'best' : ''}"><td>${m.model}</td>` +
+    COLS.map(c => `<td class="n" ${m[c] === best[c] ? 'style="color:var(--accent)"' : ''}>${m[c].toFixed(3)}</td>`).join('') +
+    '</tr>').join('');
+
+  const names = M.metrics.map(m => m.model);
+  Plotly.newPlot('cRoc', names.map((n, i) => ({type:'scatter', mode:'lines',
+    name:`${n} ${M.roc[n].auc.toFixed(3)}`, x:M.roc[n].fpr, y:M.roc[n].tpr,
+    line:{color:SERIES[i], width:1.7}, hovertemplate:n + '<extra></extra>'}))
+    .concat([{type:'scatter', mode:'lines', x:[0,1], y:[0,1], showlegend:false,
+      line:{color:'#D2D2CC', width:1, dash:'dot'}, hoverinfo:'skip'}]),
+    {...LAYOUT, margin:{l:44,r:10,t:10,b:32},
+     xaxis:{...LAYOUT.xaxis, range:[0,1]}, yaxis:{...LAYOUT.yaxis, range:[0,1.02]},
+     legend:{x:.98, y:.04, xanchor:'right', yanchor:'bottom', font:{size:9},
+             bgcolor:'rgba(255,255,255,.9)'}}, PLOTCFG);
+
+  const baseRate = M.splits[2].rate;
+  Plotly.newPlot('cPr', names.map((n, i) => ({type:'scatter', mode:'lines',
+    name:`${n} ${M.pr[n].ap.toFixed(3)}`, x:M.pr[n].recall, y:M.pr[n].precision,
+    line:{color:SERIES[i], width:1.7}, hovertemplate:n + '<extra></extra>'}))
+    .concat([{type:'scatter', mode:'lines', x:[0,1], y:[baseRate, baseRate], showlegend:false,
+      line:{color:'#D2D2CC', width:1, dash:'dot'}, hoverinfo:'skip'}]),
+    {...LAYOUT, margin:{l:44,r:10,t:10,b:32},
+     xaxis:{...LAYOUT.xaxis, range:[0,1]}, yaxis:{...LAYOUT.yaxis, range:[0,1.02]},
+     legend:{x:.98, y:.98, xanchor:'right', yanchor:'top', font:{size:9},
+             bgcolor:'rgba(255,255,255,.9)'}}, PLOTCFG);
+
+  $('segCm').innerHTML = names.map(n =>
+    `<button data-m="${esc(n)}" class="${n === champ.model ? 'on' : ''}">${esc(n.replace(' (tuned)', '*'))}</button>`).join('');
+  function drawCm(name) {
+    const [[tn, fp], [fn, tp]] = M.cm[name];
+    Plotly.react('cCm', [{type:'heatmap', z:[[tn, fp], [fn, tp]],
+      x:['Pred: no', 'Pred: yes'], y:['Actual: no', 'Actual: yes'],
+      colorscale:[[0, '#EAF1FD'], [1, C.blue]], showscale:false,
+      text:[[tn, fp], [fn, tp]], texttemplate:'%{text}',
+      textfont:{size:20, family:'Space Grotesk,sans-serif'},
+      hovertemplate:'%{y} · %{x}: %{z}<extra></extra>'}],
+      {...LAYOUT, margin:{l:78,r:10,t:10,b:34},
+       xaxis:{...LAYOUT.xaxis, tickfont:{size:10}},
+       yaxis:{...LAYOUT.yaxis, autorange:'reversed', tickfont:{size:10}}}, PLOTCFG);
+    $('cmRead').innerHTML = [
+      ['True neg', tn, C.muted], ['False pos', fp, C.accent],
+      ['False neg', fn, C.amber], ['True pos', tp, C.green],
+      ['Precision', ((tp / (tp + fp)) * 100).toFixed(1) + '%', C.blue],
+      ['Recall', ((tp / (tp + fn)) * 100).toFixed(1) + '%', C.blue],
+    ].map(([l, v, c]) => `<div class="kpi"><div class="n" style="color:${c}">${typeof v === 'number' ? fmtInt(v) : v}</div>
+      <div class="l">${l}</div></div>`).join('');
+  }
+  document.querySelectorAll('#segCm button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#segCm button').forEach(x => x.classList.toggle('on', x === b));
+    drawCm(b.dataset.m);
+  });
+  drawCm(champ.model);
+
+  const bar = S.bar.slice(0, 15).reverse();
+  Plotly.newPlot('cShapBar', [{type:'bar', orientation:'h', y:bar.map(b => b.feature),
+    x:bar.map(b => b.mean_abs),
+    marker:{color:bar.map((_, i) => i >= bar.length - 3 ? C.accent : C.blue)},
+    hovertemplate:'%{y}: %{x:.4f}<extra></extra>'}],
+    {...LAYOUT, showlegend:false, margin:{l:160,r:18,t:10,b:32},
+     yaxis:{...LAYOUT.yaxis, tickfont:{size:9}}}, PLOTCFG);
+
+  const bees = S.beeswarm.slice(0, 15).reverse();
+  let seed = 42; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  Plotly.newPlot('cBees', bees.map((f, row) => ({type:'scatter', mode:'markers', showlegend:false,
+    x:f.shap, y:f.shap.map(() => row + (rnd() - .5) * .6),
+    customdata:f.raw.map(v => [f.feature, v]),
+    marker:{size:3.4, opacity:.72, color:f.norm,
+      colorscale:[[0, '#0E9BC4'], [.5, '#7C4DEB'], [1, C.accent]], cmin:0, cmax:1, showscale:false},
+    hovertemplate:'%{customdata[0]}<br>value %{customdata[1]}<br>SHAP %{x:.3f}<extra></extra>'})),
+    {...LAYOUT, margin:{l:160,r:16,t:10,b:32},
+     xaxis:{...LAYOUT.xaxis, zeroline:true, zerolinecolor:'#C3C3C9', zerolinewidth:1.2},
+     yaxis:{...LAYOUT.yaxis, tickmode:'array', tickvals:bees.map((_, i) => i),
+       ticktext:bees.map(f => f.feature), tickfont:{size:9},
+       gridcolor:'rgba(0,0,0,0)', range:[-.8, bees.length - .2]}}, PLOTCFG);
+})();
+</script>
+
+</body>
+</html>

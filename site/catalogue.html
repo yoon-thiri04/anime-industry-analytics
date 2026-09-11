@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Catalogue — Anime Industry Analytics</title>
+
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('catalogue.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">Working dataset</div>
+  <h1>Catalogue</h1>
+  <div class="hstats">
+    <div><b id="hTitles">—</b><span>titles</span></div>
+    <div><b id="hYears">—</b><span>years</span></div>
+    <div><b id="hStudios">—</b><span>studios</span></div>
+  </div>
+</div></div>
+
+<section style="padding-top:1.6rem">
+  <div class="wrap">
+    <div style="display:grid;grid-template-columns:1.7fr repeat(5,1fr) auto;gap:.5rem;align-items:center"
+         id="filters">
+      <input type="search" id="q" placeholder="Search title…" autocomplete="off">
+      <select id="fGenre"></select>
+      <select id="fType"></select>
+      <select id="fStudio"></select>
+      <select id="fSource"></select>
+      <select id="fSort">
+        <option value="balanced">balanced_score</option>
+        <option value="score">MAL score</option>
+        <option value="members">Members</option>
+        <option value="newest">Newest</option>
+        <option value="title">A–Z</option>
+      </select>
+      <button class="chip" id="reset" title="Reset filters">Reset</button>
+    </div>
+    <div class="lab" style="margin:1rem 0 1.3rem" id="count"></div>
+    <div id="results" class="posters"></div>
+    <div id="pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:2.2rem;flex-wrap:wrap"></div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const G = ANIME_DATA.GLOB, $ = id => document.getElementById(id);
+  $('hTitles').textContent = fmtInt(G.records);
+  $('hYears').textContent = G.year_min + '–' + G.year_max;
+  $('hStudios').textContent = fmtInt(G.n_studios);
+
+  const state = {page:1};
+  let timer = null;
+  const fill = (sel, list, any) => sel.innerHTML = `<option value="">${any}</option>` +
+    list.map(o => `<option value="${esc(o.name)}">${esc(o.name)}</option>`).join('');
+
+  async function boot() {
+    const M = await apiGet('/api/meta');
+    fill($('fGenre'), M.genres, 'All genres');
+    fill($('fType'), M.types, 'All formats');
+    fill($('fStudio'), M.studios.slice(0, 220), 'All studios');
+    fill($('fSource'), M.sources, 'All sources');
+    const p = new URLSearchParams(location.search);
+    if (p.get('genre')) $('fGenre').value = p.get('genre');
+    if (p.get('studio')) $('fStudio').value = p.get('studio');
+    load();
+  }
+  const params = () => ({q:$('q').value.trim(), genre:$('fGenre').value, type:$('fType').value,
+    studio:$('fStudio').value, source:$('fSource').value, sort:$('fSort').value,
+    page:state.page, per:24});
+
+  async function load() {
+    const res = $('results');
+    res.innerHTML = Array.from({length:12}, () =>
+      '<div><div class="skel" style="aspect-ratio:2/3"></div></div>').join('');
+    let d;
+    try { d = await apiGet('/api/catalogue', params()); }
+    catch (e) { res.innerHTML = `<div class="empty" style="grid-column:1/-1">${esc(e.message)}</div>`; return; }
+    $('count').textContent = d.total
+      ? `${fmtInt(d.total)} titles · page ${d.page} / ${fmtInt(d.pages)}` : 'no matches';
+    res.innerHTML = d.results.length ? d.results.map(a => posterCard(a)).join('')
+      : '<div class="empty" style="grid-column:1/-1">Nothing matches these filters.</div>';
+
+    const pg = $('pager');
+    if (d.pages <= 1) { pg.innerHTML = ''; return; }
+    const btn = (l, p, on) => `<button class="chip ${on?'on':''}" data-p="${p}" ${p?'':'disabled'}>${l}</button>`;
+    const near = [];
+    for (let i = Math.max(1, d.page - 2); i <= Math.min(d.pages, d.page + 2); i++) near.push(i);
+    pg.innerHTML = btn('←', d.page > 1 ? d.page - 1 : 0) +
+      near.map(i => btn(String(i), i, i === d.page)).join('') +
+      btn('→', d.page < d.pages ? d.page + 1 : 0);
+    pg.querySelectorAll('button[data-p]').forEach(b => b.onclick = () => {
+      state.page = +b.dataset.p; load(); scrollTo({top:0, behavior:'smooth'});
+    });
+  }
+  const rerun = () => { state.page = 1; load(); };
+  ['fGenre','fType','fStudio','fSource','fSort'].forEach(id => $(id).onchange = rerun);
+  $('q').oninput = () => { clearTimeout(timer); timer = setTimeout(rerun, 300); };
+  $('reset').onclick = () => {
+    $('q').value = '';
+    ['fGenre','fType','fStudio','fSource'].forEach(id => $(id).value = '');
+    $('fSort').value = 'balanced'; rerun();
+  };
+  boot();
+})();
+</script>
+
+</body>
+</html>

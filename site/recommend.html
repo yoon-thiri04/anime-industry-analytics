@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Similar — Anime Industry Analytics</title>
+
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('recommend.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">Hybrid content-based recommender</div>
+  <h1>Find the comparable titles</h1>
+  <p>60% storyline similarity, 40% genre and theme tags.</p>
+</div></div>
+
+<section style="padding-top:1.8rem">
+  <div class="wrap">
+    <div style="display:grid;grid-template-columns:1fr auto;gap:.5rem;align-items:start" id="searchRow">
+      <div class="acwrap">
+        <input type="search" id="q" autocomplete="off"
+               placeholder="Shingeki no Kyojin · Attack on Titan · 進撃の巨人 · SnK">
+        <div class="aclist" id="ac"></div>
+      </div>
+      <button class="btn" id="go">Recommend</button>
+    </div>
+    <div class="tbar" style="margin-top:.7rem" id="quick"></div>
+
+    <div id="err" class="empty" style="display:none;color:var(--accent)"></div>
+    <div id="queryCard" style="margin-top:1.4rem"></div>
+
+    <div class="box" id="controls" style="margin-top:1.2rem;display:none">
+      <div class="tbar">
+        <span class="lab">Blend</span>
+        <div style="flex:1;min-width:220px;max-width:400px">
+          <div class="simrow" style="font-size:.66rem"><span>Storyline <b id="wS">60%</b></span>
+            <span>Genre &amp; theme <b id="wG">40%</b></span></div>
+          <input type="range" id="w" min="0" max="100" step="5" value="60">
+        </div>
+        <select id="topn" style="width:88px"><option>6</option><option selected>12</option>
+          <option>18</option><option>24</option></select>
+        <button class="chip" id="reset60">60 / 40</button>
+      </div>
+    </div>
+
+    <div id="results" class="posters" style="margin-top:1.4rem"></div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id), D = ANIME_DATA;
+  let current = null, acItems = [], acSel = -1, timer = null, lastReq = null;
+
+  $('quick').innerHTML = '<span class="lab">Or start from</span>' + D.SPOTLIGHT.slice(0, 6).map(a =>
+    `<button class="chip" data-id="${a.mal_id}">${esc(a.title.length > 22 ? a.title.slice(0, 21) + '…' : a.title)}</button>`).join('');
+  $('quick').onclick = e => { const b = e.target.closest('button[data-id]'); if (b) run({mal_id:+b.dataset.id}); };
+
+  function renderAC() {
+    const ac = $('ac');
+    if (!acItems.length) { ac.classList.remove('on'); return; }
+    ac.innerHTML = acItems.map((a, i) => `<button class="acitem ${i === acSel ? 'sel' : ''}" data-id="${a.mal_id}">
+      <img src="${esc(artOf(a.image))}" alt="" onerror="this.src='${FALLBACK_ART}'">
+      <span><span class="t">${esc(a.title)}</span>
+        <span class="s">${a.year || '—'} · ${esc(a.type)} · ${a.balanced.toFixed(3)}</span></span></button>`).join('');
+    ac.classList.add('on');
+  }
+  $('ac').onclick = e => { const b = e.target.closest('.acitem'); if (!b) return;
+    const hit = acItems.find(a => a.mal_id === +b.dataset.id);
+    $('q').value = hit ? hit.title : ''; $('ac').classList.remove('on'); run({mal_id:+b.dataset.id}); };
+  $('q').oninput = () => { clearTimeout(timer);
+    const v = $('q').value.trim();
+    if (v.length < 2) { acItems = []; renderAC(); return; }
+    timer = setTimeout(async () => {
+      try { acItems = (await apiGet('/api/search', {q:v})).results; acSel = -1; renderAC(); }
+      catch (_) { acItems = []; renderAC(); }
+    }, 220); };
+  $('q').onkeydown = e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault();
+      acSel = Math.max(0, Math.min(acItems.length - 1, acSel + (e.key === 'ArrowDown' ? 1 : -1))); renderAC(); }
+    else if (e.key === 'Enter') { e.preventDefault();
+      if (acSel >= 0 && acItems[acSel]) { $('ac').classList.remove('on'); run({mal_id:acItems[acSel].mal_id}); }
+      else run({q:$('q').value.trim()}); }
+    else if (e.key === 'Escape') $('ac').classList.remove('on'); };
+  document.addEventListener('click', e => { if (!e.target.closest('.acwrap')) $('ac').classList.remove('on'); });
+  $('go').onclick = () => run({q:$('q').value.trim()});
+
+  $('w').oninput = () => { $('wS').textContent = $('w').value + '%';
+    $('wG').textContent = (100 - +$('w').value) + '%'; if (current) run({mal_id:current.mal_id}, true); };
+  $('reset60').onclick = () => { $('w').value = 60; $('w').oninput(); };
+  $('topn').onchange = () => { if (current) run({mal_id:current.mal_id}, true); };
+
+  async function run(sel, keep) {
+    $('err').style.display = 'none';
+    $('results').innerHTML = Array.from({length:6}, () =>
+      '<div><div class="skel" style="aspect-ratio:2/3"></div></div>').join('');
+    $('controls').style.display = 'block';
+    const token = (lastReq = {});
+    let d;
+    try { d = await apiGet('/api/recommend', {...sel, top_n:+$('topn').value, w_story:(+$('w').value / 100).toFixed(2)}); }
+    catch (e) {
+      if (token !== lastReq) return;
+      $('err').textContent = e.message; $('err').style.display = 'block';
+      $('queryCard').innerHTML = ''; $('results').innerHTML = ''; $('controls').style.display = 'none'; return;
+    }
+    if (token !== lastReq) return;
+    current = d.query; drawQuery(d); drawResults(d);
+    if (!keep) $('queryCard').scrollIntoView({behavior:'smooth', block:'start'});
+    history.replaceState(null, '', `?mal_id=${d.query.mal_id}`);
+  }
+
+  function drawQuery(d) {
+    const a = d.query;
+    $('queryCard').innerHTML = `<div class="box detail" style="padding:1.2rem">
+      <div class="poster" style="max-width:150px"><img src="${esc(artOf(a.image))}" alt=""
+        onerror="this.src='${FALLBACK_ART}'" style="width:100%;border-radius:3px;display:block"></div>
+      <div style="min-width:0">
+        <div class="lab">Query · ${esc(a.type)} · ${a.year || '—'}</div>
+        <h2 style="font-size:1.25rem;margin:.35rem 0 .1rem">${esc(a.title)}</h2>
+        ${a.english && a.english !== a.title ? `<div class="sub">${esc(a.english)}</div>` : ''}
+        <div class="stats">
+          <div><b>${a.balanced.toFixed(3)}</b><span>balanced</span></div>
+          <div><b>${a.score ?? '—'}</b><span>MAL</span></div>
+          <div><b>${fmtK(a.members)}</b><span>members</span></div>
+          <div><b>#${a.nlp_cluster}</b><span>cluster</span></div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:.22rem">
+          ${(a.genres || []).map(g => `<span class="tag">${esc(g)}</span>`).join('')}
+          ${(a.themes || []).map(g => `<span class="tag">${esc(g)}</span>`).join('')}</div>
+      </div></div>`;
+  }
+
+  function drawResults(d) {
+    const w = d.weights;
+    $('results').innerHTML = d.results.map((r, i) => posterCard(r, {rank:i + 1, extra:`
+      <div class="sim">
+        <div class="simrow"><span>match</span><b>${(r.combined_similarity * 100).toFixed(0)}%</b></div>
+        <div class="simbar"><i style="width:${(r.combined_similarity * 100).toFixed(1)}%;background:${C.accent}"></i></div>
+        <div class="simrow"><span>story ${(w.story * 100).toFixed(0)}%</span><b>${r.story_similarity.toFixed(2)}</b></div>
+        <div class="simbar"><i style="width:${(r.story_similarity * 100).toFixed(1)}%;background:${C.blue}"></i></div>
+        <div class="simrow"><span>tags ${(w.genre_theme * 100).toFixed(0)}%</span><b>${r.genre_theme_similarity.toFixed(2)}</b></div>
+        <div class="simbar"><i style="width:${(r.genre_theme_similarity * 100).toFixed(1)}%;background:${C.green}"></i></div>
+      </div>`})).join('');
+  }
+
+  const p = new URLSearchParams(location.search);
+  if (p.get('mal_id')) run({mal_id:+p.get('mal_id')});
+  else if (p.get('q')) { $('q').value = p.get('q'); run({q:p.get('q')}); }
+  else run({mal_id:D.SPOTLIGHT[0].mal_id});
+})();
+</script>
+
+</body>
+</html>

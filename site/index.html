@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Anime Industry Analytics</title>
+
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('index.html')</script>
+
+<header class="hero">
+  <div class="strip" id="strip" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="lab">Anime Industry Analytics</div>
+    <h1>Greenlight decisions,<br>made with <em>evidence</em>.</h1>
+    <p>8,227 MyAnimeList titles, mined for what actually predicts an audience —
+       before a single frame is drawn.</p>
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+      <a class="btn light" href="predict.html">Score a new anime</a>
+      <a class="btn outline-l" href="recommend.html">Find similar titles</a>
+    </div>
+  </div>
+</header>
+
+<section style="padding:0">
+  <div class="wrap">
+    <div class="strip-stats">
+      <div><b id="s1">—</b><span>titles analysed</span></div>
+      <div><b id="s2">—</b><span>studios benchmarked</span></div>
+      <div><b id="s3">—</b><span>storyline archetypes</span></div>
+      <div><b id="s4">—</b><span>held-out ROC-AUC</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="lab ac">The outcome metric</div>
+    <h2 class="h-sec">balanced_score, split into three tiers</h2>
+    <div class="kgrid reveal" id="tiers"></div>
+  </div>
+</section>
+
+<section style="background:var(--wash);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="tbar" style="margin-bottom:1.4rem">
+      <div><div class="lab ac">Top of the catalogue</div>
+        <h2 class="h-sec" style="margin-bottom:0">Highest balanced_score</h2></div>
+      <a class="btn ghost" href="catalogue.html" style="margin-left:auto">Browse all</a>
+    </div>
+    <div class="posters reveal" id="spotlight"></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap" style="display:flex;gap:1.4rem;flex-wrap:wrap;align-items:center;justify-content:space-between">
+    <h2 class="h-sec" style="margin:0">Put a concept in front of the model.</h2>
+    <a class="btn" href="predict.html">Open the Success Lab</a>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const D = ANIME_DATA, H = D.HOME, G = D.GLOB;
+  const COLS = 12, PER = 8, P = D.POSTERS;
+  document.getElementById('strip').innerHTML = Array.from({length: COLS}, (_, c) => {
+    const s = Array.from({length: PER}, (_, i) => P[(c * PER + i) % P.length]);
+    return `<div class="col" style="animation-delay:-${c * 5}s">` +
+      s.concat(s).map(u => `<img loading="lazy" src="${u}" alt="" onerror="this.style.visibility='hidden'">`).join('') +
+      '</div>';
+  }).join('');
+
+  document.getElementById('s1').textContent = fmtInt(G.records);
+  document.getElementById('s2').textContent = fmtInt(G.n_studios);
+  document.getElementById('s3').textContent = D.CLUSTERS.k;
+  document.getElementById('s4').textContent = H.best_auc.toFixed(3);
+
+  const b = D.BSCORE_BINS.counts;
+  document.getElementById('tiers').innerHTML = [
+    ['High', b.Balanced_High, 'top quartile', C.accent],
+    ['Mid', b.Balanced_Mid, '40th–75th percentile', C.amber],
+    ['Low', b.Balanced_Low, 'below 40th percentile', C.muted],
+  ].map(([k, n, s, col]) =>
+    `<div class="kpi"><div class="n" style="color:${col}">${fmtInt(n)}</div>
+      <div class="l">Balanced ${k}</div>
+      <div class="sub" style="font-size:.76rem;margin-top:.3rem">${s}</div></div>`).join('');
+
+  document.getElementById('spotlight').innerHTML =
+    D.SPOTLIGHT.slice(0, 12).map((a, i) => posterCard(a, {rank: i + 1})).join('');
+})();
+</script>
+
+</body>
+</html>

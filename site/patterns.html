@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Patterns — Anime Industry Analytics</title>
+<script src="plotly.min.js"></script>
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('patterns.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">FP-Growth</div>
+  <h1>Association rules</h1>
+  <p>Each title is a basket of production choices with its outcome dropped in as one more item.</p>
+</div></div>
+
+<section style="padding-top:1.8rem">
+  <div class="wrap">
+    <div class="tbar" style="margin-bottom:1.3rem">
+      <div class="seg" id="segSpace">
+        <button data-k="genre_theme" class="on">Genre ↔ Theme</button>
+        <button data-k="producer_high">Producer → High</button>
+        <button data-k="studio_high">Studio → High</button>
+        <button data-k="producer_spec">Producer focus</button>
+      </div>
+      <span class="lab grow" style="margin-left:auto" id="spaceMeta"></span>
+    </div>
+
+    <div class="grid2">
+      <div class="box"><div class="cap">Support × confidence · size = lift</div>
+        <div class="plot" id="cRules" style="height:330px"></div></div>
+      <div class="box"><div class="cap">Top rules by lift</div>
+        <div class="plot" id="cLift" style="height:330px"></div></div>
+    </div>
+
+    <div class="grid3" id="ruleCards" style="margin-top:1.2rem"></div>
+  </div>
+</section>
+
+<section style="background:var(--wash);border-top:1px solid var(--line)">
+  <div class="wrap">
+    <div class="lab ac">Partnerships</div>
+    <h2 class="h-sec">Producer × studio, ≥ 5 shared titles</h2>
+    <div class="box" style="padding:0">
+      <table><thead><tr><th>Studio</th><th>Producer</th><th class="n">Titles</th>
+        <th class="n">Mean balanced</th><th class="n">Mean members</th></tr></thead>
+        <tbody id="collab"></tbody></table></div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const D = ANIME_DATA, R = D.RULES;
+
+  // Filter out "Team Sports -> Sports" from both tables automatically:
+  const isTeamSportToSport = r => r.a.includes('Team Sports') && r.c.includes('Sports');
+  R.genre_theme = R.genre_theme.filter(r => !isTeamSportToSport(r));
+  if (R.cloud && R.cloud.genre_theme) {
+    R.cloud.genre_theme = R.cloud.genre_theme.filter(r => !isTeamSportToSport(r));
+  }
+
+  const total = Object.values(D.BSCORE_BINS.counts).reduce((a, b) => a + b, 0);
+  const PARAMS = {genre_theme:R.params.gt, producer_high:R.params.producer,
+                  studio_high:R.params.studio, producer_spec:R.params.producer};
+  let space = 'genre_theme';
+
+  function draw() {
+    const rules = R[space], cloud = (R.cloud && R.cloud[space]) || rules, P = PARAMS[space];
+    document.getElementById('spaceMeta').textContent =
+      `support ≥ ${(P.support * 100).toFixed(1)}% · confidence ≥ ${(P.conf * 100).toFixed(0)}% · ` +
+      `${fmtInt(P.n_rules)} rules with lift > 1`;
+
+    const label = r => `${r.a.join(' + ')} → ${r.c.join(' + ')}`;
+    Plotly.react('cRules', [{type:'scatter', mode:'markers',
+      x:cloud.map(r => r.support * 100), y:cloud.map(r => r.confidence * 100),
+      text:cloud.map(label), customdata:cloud.map(r => r.lift),
+      marker:{size:cloud.map(r => 7 + Math.min(18, r.lift * 1.6)), color:cloud.map(r => r.lift),
+        colorscale:[[0, '#9BC0F5'], [.55, C.blue], [1, C.accent]], showscale:false,
+        line:{color:'#fff', width:1}, opacity:.88},
+      hovertemplate:'%{text}<br>support %{x:.2f}% · confidence %{y:.1f}% · lift %{customdata:.2f}<extra></extra>'}],
+      {...LAYOUT, showlegend:false, margin:{l:46,r:10,t:10,b:38},
+       xaxis:{...LAYOUT.xaxis, title:{text:'support %', font:{size:10}}},
+       yaxis:{...LAYOUT.yaxis, title:{text:'confidence %', font:{size:10}}, range:[0, 105]}}, PLOTCFG);
+
+    const top = rules.slice(0, 9).reverse();
+    Plotly.react('cLift', [{type:'bar', orientation:'h', x:top.map(r => r.lift),
+      y:top.map(r => { const t = label(r); return t.length > 40 ? t.slice(0, 38) + '…' : t; }),
+      text:top.map(r => r.lift.toFixed(2)), texttemplate:'%{text}', textposition:'outside', cliponaxis:false,
+      marker:{color:top.map(r => r.confidence >= .6 ? C.blue : '#9DB8E8')},
+      customdata:top.map(r => [label(r), r.confidence * 100]),
+      hovertemplate:'%{customdata[0]}<br>lift %{x:.2f} · confidence %{customdata[1]:.1f}%<extra></extra>'}],
+      {...LAYOUT, showlegend:false, margin:{l:222,r:44,t:10,b:32},
+       yaxis:{...LAYOUT.yaxis, tickfont:{size:9}}}, PLOTCFG);
+
+    const side = (arr, ac) => arr.map(x =>
+      `<span class="tag ${ac && /^Balanced_/.test(x) ? 'ac' : ''}">${esc(x.replace('Balanced_', 'Balanced '))}</span>`).join(' ');
+    document.getElementById('ruleCards').innerHTML = rules.slice(0, 9).map(r => `
+      <div class="rule reveal">
+        <div class="side">${side(r.a)}</div>
+        <div class="arrow">↓</div>
+        <div class="side">${side(r.c, true)}</div>
+        <div class="mets">
+          <div><b>${(r.confidence * 100).toFixed(0)}%</b>conf</div>
+          <div><b>${r.lift.toFixed(2)}×</b>lift</div>
+          <div><b>${fmtInt(Math.round(r.support * total))}</b>titles</div>
+        </div></div>`).join('');
+  }
+  document.querySelectorAll('#segSpace button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#segSpace button').forEach(x => x.classList.toggle('on', x === b));
+    space = b.dataset.k; draw();
+  });
+  draw();
+
+  document.getElementById('collab').innerHTML = D.COLLAB.slice(0, 10).map(c =>
+    `<tr><td><b>${esc(c.studio)}</b></td><td class="sub">${esc(c.producer)}</td>
+      <td class="n">${c.n}</td><td class="n"><b>${c.avg_balanced.toFixed(3)}</b></td>
+      <td class="n">${fmtK(c.avg_members)}</td></tr>`).join('');
+})();
+</script>
+
+</body>
+</html>

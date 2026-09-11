@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Storylines — Anime Industry Analytics</title>
+<script src="plotly.min.js"></script>
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('storylines.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">TF-IDF → SVD → K-Means</div>
+  <h1>Storyline archetypes</h1>
+  <p>Genre tags discarded; the synopses clustered on their own.</p>
+  <div class="hstats">
+    <div><b id="hK">—</b><span>clusters</span></div>
+    <div><b id="hDocs">—</b><span>synopses</span></div>
+    <div><b id="hSil">—</b><span>silhouette</span></div>
+    <div><b id="hV">—</b><span>Cramér's V vs genre</span></div>
+  </div>
+</div></div>
+
+<section style="padding-top:1.8rem">
+  <div class="wrap">
+    <div class="grid2">
+      <div class="box"><div class="cap">Choosing k by silhouette</div>
+        <div class="plot" id="cSil" style="height:260px"></div></div>
+      <div class="box"><div class="cap">Storyline space · PCA projection</div>
+        <div class="plot" id="cScatter" style="height:260px"></div></div>
+    </div>
+  </div>
+</section>
+
+<section style="background:var(--wash);border-top:1px solid var(--line)">
+  <div class="wrap">
+    <div class="tbar" style="margin-bottom:1.3rem">
+      <h2 class="h-sec" style="margin:0">All <span id="kIn">—</span> clusters</h2>
+      <input type="search" id="cq" placeholder="Filter by term, genre or title…"
+             style="max-width:280px;margin-left:auto">
+    </div>
+    <div class="grid4" id="clusters"></div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const K = ANIME_DATA.CLUSTERS, $ = id => document.getElementById(id);
+  $('hK').textContent = K.k; $('hDocs').textContent = fmtInt(K.n_docs);
+  $('hSil').textContent = K.best_silhouette.toFixed(4);
+  $('hV').textContent = K.cramers_v.toFixed(3);
+  $('kIn').textContent = K.k;
+
+  const S = K.silhouette_curve;
+  Plotly.newPlot('cSil', [{type:'scatter', mode:'lines+markers', x:S.k, y:S.score,
+    line:{color:C.blue, width:1.8}, marker:{size:4, color:S.k.map(k => k === K.k ? C.accent : C.blue)},
+    hovertemplate:'k = %{x}: %{y:.4f}<extra></extra>'}],
+    {...LAYOUT, showlegend:false, margin:{l:50,r:12,t:10,b:34}, xaxis:{...LAYOUT.xaxis, dtick:4},
+     shapes:[{type:'line', x0:K.k, x1:K.k, yref:'paper', y0:0, y1:1,
+              line:{color:C.accent, width:1.2, dash:'dot'}}]}, PLOTCFG);
+
+  const sc = K.scatter, byC = {};
+  sc.c.forEach((c, i) => { (byC[c] ||= {x:[], y:[], t:[]}); byC[c].x.push(sc.x[i]);
+    byC[c].y.push(sc.y[i]); byC[c].t.push(sc.t[i]); });
+  Plotly.newPlot('cScatter', Object.keys(byC).map(Number).sort((a, b) => a - b).map(c => ({
+    type:'scatter', mode:'markers', name:'#' + c, showlegend:false,
+    x:byC[c].x, y:byC[c].y, text:byC[c].t,
+    marker:{size:3.6, opacity:.7, color:SERIES[c % SERIES.length]},
+    hovertemplate:'%{text}<br>cluster #' + c + '<extra></extra>'})),
+    {...LAYOUT, margin:{l:44,r:12,t:10,b:32},
+     xaxis:{...LAYOUT.xaxis, zeroline:false}, yaxis:{...LAYOUT.yaxis, zeroline:false}}, PLOTCFG);
+
+  let q = '', t = null;
+  function render() {
+    let items = K.items;
+    if (q) items = items.filter(c => c.terms.some(x => x.includes(q)) ||
+      c.genres.some(g => g.name.toLowerCase().includes(q)) ||
+      c.examples.some(e => e.title.toLowerCase().includes(q)));
+    $('clusters').innerHTML = items.length ? items.map(c => `
+      <div class="box reveal" style="padding:.9rem 1rem">
+        <div class="tbar"><span class="lab" style="margin:0">Cluster ${c.id}</span>
+          <span class="lab grow" style="margin-left:auto">${fmtInt(c.n)}</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:.22rem;margin:.55rem 0 .7rem">
+          ${c.terms.slice(0, 5).map((x, i) => `<span class="tag ${i < 2 ? 'ac' : ''}">${esc(x)}</span>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:.22rem">
+          ${c.examples.map(e => `<button class="pcard" data-id="${e.mal_id}" title="${esc(e.title)}">
+            <img loading="lazy" src="${esc(artOf(e.image))}" alt="" onerror="this.src='${FALLBACK_ART}'"
+              style="width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:2px"></button>`).join('')}
+        </div>
+      </div>`).join('') : `<div class="empty" style="grid-column:1/-1">No cluster matches “${esc(q)}”.</div>`;
+  }
+  $('cq').oninput = e => { clearTimeout(t);
+    t = setTimeout(() => { q = e.target.value.trim().toLowerCase(); render(); }, 200); };
+  render();
+})();
+</script>
+
+</body>
+</html>

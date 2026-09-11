@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Forecast — Anime Industry Analytics</title>
+<script src="plotly.min.js"></script>
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('forecast.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">Damped Holt-Winters</div>
+  <h1>Genre forecast</h1>
+  <p>History 2010–2025 · forecast 2026–2028 · backtest 2023–2025.</p>
+</div></div>
+
+<section style="padding-top:1.8rem">
+  <div class="wrap">
+    <div class="tbar" style="margin-bottom:1.2rem">
+      <div class="seg" id="segSeries">
+        <button data-k="demand" class="on">Audience demand</button>
+        <button data-k="release">Release volume</button></div>
+      <span class="lab grow" style="margin-left:auto" id="seriesMeta"></span>
+    </div>
+
+    <div class="box"><div class="cap" id="mainTitle">—</div>
+      <div class="plot" id="cMain" style="height:380px"></div></div>
+
+    <div class="grid2" style="margin-top:1.2rem">
+      <div class="box" style="padding:0"><table>
+        <thead><tr><th>Genre</th><th class="n">2026</th><th class="n">2027</th>
+          <th class="n">2028</th><th>Trend</th></tr></thead>
+        <tbody id="futureTable"></tbody></table></div>
+      <div class="box" style="padding:0"><table>
+        <thead><tr><th>Backtest</th><th class="n">MAE</th><th class="n">RMSE</th><th class="n">MAPE</th></tr></thead>
+        <tbody id="backTable"></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const D = ANIME_DATA, $ = id => document.getElementById(id);
+  const SETS = {
+    demand:{data:D.FORECAST_DEMAND, title:'Median MAL members per title', meta:'median members per genre per year'},
+    release:{data:D.FORECAST_RELEASE, title:'Titles released per year', meta:'titles per genre per year'}};
+  let key = 'demand';
+
+  function draw() {
+    const S = SETS[key], F = S.data, genres = Object.keys(F.history);
+    $('mainTitle').textContent = S.title;
+    $('seriesMeta').textContent = S.meta;
+
+    const traces = [];
+    genres.forEach((g, i) => {
+      const col = SERIES[i % SERIES.length];
+      traces.push({type:'scatter', mode:'lines', name:g, legendgroup:g, x:F.years, y:F.history[g],
+        line:{color:col, width:1.7}, hovertemplate:`${g} %{x}: %{y:,.0f}<extra></extra>`});
+      traces.push({type:'scatter', mode:'lines', legendgroup:g, showlegend:false,
+        x:[F.years[F.years.length - 1], ...F.future_years],
+        y:[F.history[g][F.history[g].length - 1], ...F.forecast[g]],
+        line:{color:col, width:1.7, dash:'dash'},
+        hovertemplate:`${g} forecast %{x}: %{y:,.0f}<extra></extra>`});
+    });
+    Plotly.react('cMain', traces, {...LAYOUT, margin:{l:56,r:12,t:10,b:56},
+      xaxis:{...LAYOUT.xaxis, dtick:2}, legend:{orientation:'h', y:-.16, font:{size:10}},
+      shapes:[{type:'line', x0:2025.5, x1:2025.5, yref:'paper', y0:0, y1:1,
+               line:{color:'#C3C3C9', width:1, dash:'dot'}}]}, PLOTCFG);
+
+    const rows = genres.map(g => ({g, f:F.forecast[g]})).sort((a, b) => b.f[2] - a.f[2]);
+    $('futureTable').innerHTML = rows.map(r => {
+      const ch = r.f[0] ? (r.f[2] - r.f[0]) / r.f[0] : 0;
+      const strong = Math.abs(ch) > .15, up = ch > .01, flat = Math.abs(ch) <= .01;
+      const word = flat ? '→ stable' : up ? (strong ? '↑↑ sharp rise' : '↑ slight rise')
+                                          : (strong ? '↓↓ sharp fall' : '↓ slight fall');
+      const col = flat ? 'var(--muted)' : up ? 'var(--ink)' : 'var(--accent)';
+      return `<tr><td>${esc(r.g)}</td>${r.f.map(v => `<td class="n">${fmtInt(v)}</td>`).join('')}
+        <td style="color:${col};white-space:nowrap">${word}</td></tr>`;
+    }).join('');
+
+    $('backTable').innerHTML = F.backtest.map(b =>
+      `<tr><td>${esc(b.genre)}</td><td class="n">${fmtInt(b.mae)}</td><td class="n">${fmtInt(b.rmse)}</td>
+        <td class="n" ${b.mape > 100 ? 'style="color:var(--accent)"' : ''}>${b.mape.toFixed(0)}%</td></tr>`).join('');
+  }
+  document.querySelectorAll('#segSeries button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#segSeries button').forEach(x => x.classList.toggle('on', x === b));
+    key = b.dataset.k; draw();
+  });
+  draw();
+})();
+</script>
+
+</body>
+</html>

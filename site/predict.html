@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=2">
+<title>Predict — Anime Industry Analytics</title>
+<script src="plotly.min.js"></script>
+<script src="anime_data.js"></script>
+<script src="anime.js?v=2"></script>
+</head>
+<body>
+
+<script>aNav('predict.html')</script>
+
+<div class="head"><div class="wrap">
+  <div class="lab ac">Pre-release success classification</div>
+  <h1>Success Lab</h1>
+  <div class="hstats">
+    <div><b id="hFeat">—</b><span>pre-release features</span></div>
+    <div><b id="hThr">—</b><span>success threshold</span></div>
+    <div><b id="hAcc">—</b><span>held-out accuracy</span></div>
+  </div>
+</div></div>
+
+<section style="padding-top:1.8rem">
+  <div class="wrap">
+    <div style="display:grid;grid-template-columns:minmax(280px,340px) 1fr;gap:1.4rem;align-items:start" id="labGrid">
+
+      <div class="box">
+        <div class="tbar" style="margin-bottom:.9rem">
+          <span class="cap" style="margin:0">The concept</span>
+          <button class="chip grow" id="loadReal" style="margin-left:auto">Load a real title</button>
+        </div>
+        <div class="acwrap field" id="realWrap" style="display:none">
+          <input type="search" id="realQ" placeholder="Copy attributes from…" autocomplete="off">
+          <div class="aclist" id="realAc"></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+          <div class="field"><label class="fl">Format</label><select id="fType"></select></div>
+          <div class="field"><label class="fl">Source</label><select id="fSource"></select></div>
+          <div class="field"><label class="fl">Rating</label><select id="fRating"></select></div>
+          <div class="field"><label class="fl">Season</label><select id="fSeason"></select></div>
+          <div class="field"><label class="fl">Year</label><input type="number" id="fYear" value="2026"></div>
+          <div class="field"><label class="fl">Episodes</label><input type="number" id="fEp" value="24"></div>
+          <div class="field"><label class="fl">Min / ep</label><input type="number" id="fDur" value="24"></div>
+          <div class="field"><label class="fl">Demographic</label><select id="fDemo"></select></div>
+        </div>
+
+        <div class="field"><label class="fl">Studio</label><select id="fStudio"></select>
+          <div class="pills" id="pStudio"></div>
+          <div class="hint" id="studioHint"></div></div>
+        <div class="field"><label class="fl">Producers</label><select id="fProducer"></select>
+          <div class="pills" id="pProducer"></div></div>
+        <div class="field"><label class="fl">Genres</label><select id="fGenre"></select>
+          <div class="pills" id="pGenre"></div></div>
+        <div class="field"><label class="fl">Themes</label><select id="fTheme"></select>
+          <div class="pills" id="pTheme"></div></div>
+        <div class="field"><label class="fl">Synopsis</label>
+          <textarea id="fSyn" rows="5"></textarea></div>
+
+        <div style="display:flex;gap:.5rem">
+          <button class="btn" id="run" style="flex:1">Score this concept</button>
+          <button class="chip" id="resetForm">Reset</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="box" id="verdict"><div class="empty">Press <b>Score this concept</b>.</div></div>
+        <div class="grid2" style="margin-top:1.2rem">
+          <div class="box"><div class="cap">All five classifiers</div>
+            <div class="plot" id="cModels" style="height:230px"></div></div>
+          <div class="box"><div class="cap">Studio track record in context</div>
+            <div class="plot" id="cStudioCtx" style="height:230px"></div></div>
+        </div>
+        <div class="box" id="shapCard" style="margin-top:1.2rem;display:none">
+          <div class="cap">SHAP breakdown · XGBoost (tuned) · log-odds</div>
+          <div id="waterfall"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>aFooter()</script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id), D = ANIME_DATA, M = D.MODELS;
+  let V = null;
+  const picked = {studios:[], producers:[], genres:[], themes:[]};
+  const champ = M.metrics.find(m => m.model === 'XGBoost (tuned)') || M.metrics[0];
+  $('hFeat').textContent = M.n_features;
+  $('hThr').textContent = M.threshold.toFixed(4);
+  $('hAcc').textContent = champ.accuracy.toFixed(3);
+
+  const DEFAULT = {type:'TV', source:'Manga', rating:'PG-13 - Teens 13 or older', season:'spring',
+    year:2026, episodes:24, duration:24, demographic:'Shounen', studios:['MAPPA'], producers:['Aniplex'],
+    genres:['Action','Fantasy'], themes:['Adventure'],
+    synopsis:'A young adventurer sets out on a journey to discover a mysterious world filled with ' +
+             'powerful creatures and ancient secrets.'};
+
+  const opts = (l, ph) => `<option value="">${ph}</option>` +
+    l.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  const PILL_EL = {studios:'pStudio', producers:'pProducer', genres:'pGenre', themes:'pTheme'};
+  const renderPills = k => $(PILL_EL[k]).innerHTML = picked[k].map(v =>
+    `<span class="pill">${esc(v)}<button data-k="${k}" data-v="${esc(v)}">×</button></span>`).join('');
+  function addPicker(sel, k, max) {
+    $(sel).onchange = e => { const v = e.target.value; e.target.value = '';
+      if (!v || picked[k].includes(v)) return;
+      if (picked[k].length >= max) picked[k].shift();
+      picked[k].push(v); renderPills(k); if (k === 'studios') studioHint(); };
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('.pill button'); if (!b) return;
+    picked[b.dataset.k] = picked[b.dataset.k].filter(x => x !== b.dataset.v);
+    renderPills(b.dataset.k); if (b.dataset.k === 'studios') studioHint(); });
+
+  function studioHint() {
+    const perf = V.studio_perf, g = V.global_mean;
+    if (!picked.studios.length) { $('studioHint').textContent =
+      `No studio — falls back to the training mean ${g.toFixed(3)}.`; drawStudioCtx(null); return; }
+    const vals = picked.studios.map(s => perf[s]).filter(v => v != null);
+    const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : g;
+    $('studioHint').innerHTML = `Historical mean <b>${mean.toFixed(3)}</b> vs catalogue ${g.toFixed(3)}.`;
+    drawStudioCtx(mean);
+  }
+  function drawStudioCtx(mean) {
+    const rows = D.STUDIO_BENCH.slice(0, 12).reverse();
+    Plotly.react('cStudioCtx', [{type:'bar', orientation:'h', y:rows.map(r => r.name),
+      x:rows.map(r => r.avg_balanced), marker:{color:'#BFD3F7'},
+      hovertemplate:'%{y}: %{x:.3f}<extra></extra>'}],
+      {...LAYOUT, showlegend:false, margin:{l:112,r:16,t:16,b:30},
+       xaxis:{...LAYOUT.xaxis, range:[0, 1]}, yaxis:{...LAYOUT.yaxis, tickfont:{size:8.5}},
+       shapes: mean == null ? [] : [{type:'line', x0:mean, x1:mean, yref:'paper', y0:0, y1:1,
+         line:{color:C.accent, width:2}}],
+       annotations: mean == null ? [] : [{x:mean, y:1, yref:'paper', text:mean.toFixed(3), showarrow:false,
+         yanchor:'bottom', font:{size:9.5, color:C.accent}}]}, PLOTCFG);
+  }
+
+  function fillForm(c) {
+    $('fType').value = c.type; $('fSource').value = c.source; $('fRating').value = c.rating;
+    $('fSeason').value = c.season; $('fYear').value = c.year; $('fEp').value = c.episodes;
+    $('fDur').value = c.duration; $('fDemo').value = c.demographic || '';
+    Object.keys(picked).forEach(k => { picked[k] = (c[k] || []).slice(); renderPills(k); });
+    $('fSyn').value = c.synopsis; studioHint();
+  }
+
+  async function boot() {
+    V = (await apiGet('/api/meta')).model_vocab;
+    $('fType').innerHTML = opts(V.types, '—'); $('fSource').innerHTML = opts(V.sources, '—');
+    $('fRating').innerHTML = opts(V.ratings, '—'); $('fSeason').innerHTML = opts(V.seasons, '—');
+    $('fDemo').innerHTML = opts(V.demographics, 'Unspecified');
+    $('fStudio').innerHTML = opts(V.all_studios, 'Add studio…');
+    $('fProducer').innerHTML = opts(V.producers, 'Add producer…');
+    $('fGenre').innerHTML = opts(V.genres, 'Add genre…');
+    $('fTheme').innerHTML = opts(V.themes, 'Add theme…');
+    addPicker('fStudio', 'studios', 3); addPicker('fProducer', 'producers', 8);
+    addPicker('fGenre', 'genres', 6); addPicker('fTheme', 'themes', 5);
+    fillForm(DEFAULT); run();
+  }
+  $('resetForm').onclick = () => { fillForm(DEFAULT); run(); };
+
+  $('loadReal').onclick = () => { const w = $('realWrap');
+    w.style.display = w.style.display === 'none' ? 'block' : 'none';
+    if (w.style.display === 'block') $('realQ').focus(); };
+  let rt = null;
+  $('realQ').oninput = () => { clearTimeout(rt);
+    const v = $('realQ').value.trim();
+    if (v.length < 2) { $('realAc').classList.remove('on'); return; }
+    rt = setTimeout(async () => {
+      try {
+        const r = await apiGet('/api/search', {q:v});
+        $('realAc').innerHTML = r.results.map(a => `<button class="acitem" data-id="${a.mal_id}">
+          <img src="${esc(artOf(a.image))}" alt="" onerror="this.src='${FALLBACK_ART}'">
+          <span><span class="t">${esc(a.title)}</span><span class="s">${a.year || '—'} · ${esc(a.type)}</span></span>
+        </button>`).join('');
+        $('realAc').classList.add('on');
+      } catch (_) { $('realAc').classList.remove('on'); }
+    }, 220); };
+  $('realAc').onclick = async e => { const b = e.target.closest('.acitem'); if (!b) return;
+    $('realAc').classList.remove('on');
+    const a = await apiGet(`/api/anime/${b.dataset.id}`);
+    fillForm({type:a.type, source:a.source, rating:a.rating || DEFAULT.rating,
+      season:(a.season || 'spring'), year:2026, episodes:a.episodes || 12, duration:a.duration || 23,
+      demographic:(a.demographics || [])[0] || '', studios:(a.studios || []).slice(0, 3),
+      producers:(a.producers || []).slice(0, 8),
+      genres:(a.genres || []).filter(g => V.genres.includes(g)).slice(0, 6),
+      themes:(a.themes || []).filter(t => V.themes.includes(t)).slice(0, 5),
+      synopsis:a.synopsis || ''});
+    $('realQ').value = a.title; run(); };
+
+  $('run').onclick = run;
+  async function run() {
+    $('run').disabled = true;
+    $('verdict').innerHTML = '<div class="skel" style="height:96px"></div>';
+    let res;
+    try {
+      res = await apiPost('/api/predict', {
+        type:$('fType').value, source:$('fSource').value, rating:$('fRating').value,
+        season:$('fSeason').value, year:+$('fYear').value, episodes:+$('fEp').value,
+        duration_minutes:+$('fDur').value, demographics:$('fDemo').value ? [$('fDemo').value] : [],
+        studios:picked.studios, producers:picked.producers, genres:picked.genres,
+        themes:picked.themes, synopsis:$('fSyn').value});
+    } catch (e) {
+      $('verdict').innerHTML = `<div class="empty" style="color:var(--accent)">${esc(e.message)}</div>`;
+      $('run').disabled = false; return;
+    }
+    $('run').disabled = false;
+    drawVerdict(res); drawModels(res); drawWaterfall(res);
+  }
+
+  function drawVerdict(res) {
+    const c = res.champion, p = c.probability, hit = p >= c.threshold;
+    const agree = res.predictions.filter(m => m.prediction === 1).length;
+    $('verdict').innerHTML = `
+      <div style="display:flex;gap:1.6rem;flex-wrap:wrap;align-items:center">
+        <div><div class="lab">XGBoost (tuned)</div>
+          <div style="font-family:var(--display);font-size:3rem;font-weight:600;line-height:1;
+            color:${hit ? C.accent : C.muted}">${(p * 100).toFixed(1)}%</div></div>
+        <div style="flex:1;min-width:200px">
+          <div style="font-family:var(--display);font-size:1rem;font-weight:600">
+            ${hit ? 'Top-Quartile' : 'Not Top-Quartile'}</div>
+          <div class="probbar"><i style="width:${(p * 100).toFixed(1)}%"></i></div>
+          <div class="simrow" style="margin-top:.4rem"><span>0%</span>
+            <span>threshold ${(c.threshold * 100).toFixed(0)}%</span><span>100%</span></div>
+          <div class="hint">${agree} of ${res.predictions.length} models agree ·
+            ${res.features_built} features built</div>
+        </div></div>`;
+  }
+
+  function drawModels(res) {
+    const p = res.predictions.slice().reverse();
+    Plotly.react('cModels', [{type:'bar', orientation:'h', y:p.map(m => m.model), x:p.map(m => m.probability),
+      marker:{color:p.map(m => m.model === 'XGBoost (tuned)' ? C.accent : (m.prediction ? C.blue : '#B6B6BE'))},
+      text:p.map(m => (m.probability * 100).toFixed(0) + '%'), texttemplate:'%{text}',
+      textposition:'outside', cliponaxis:false, hovertemplate:'%{y}: %{x:.3f}<extra></extra>'}],
+      {...LAYOUT, showlegend:false, margin:{l:118,r:40,t:14,b:30},
+       xaxis:{...LAYOUT.xaxis, range:[0, 1.12], tickformat:'.0%'},
+       yaxis:{...LAYOUT.yaxis, tickfont:{size:9.5}},
+       shapes:[{type:'line', x0:.5, x1:.5, yref:'paper', y0:0, y1:1,
+                line:{color:C.ochre, width:1.2, dash:'dot'}}]}, PLOTCFG);
+  }
+
+  function drawWaterfall(res) {
+    const S = res.shap;
+    $('shapCard').style.display = 'block';
+    const rows = S.contributions.slice(0, 10).concat(
+      [{label:'all other features', value:null,
+        shap:+(S.logit - S.base_value - S.contributions.slice(0, 10)
+          .reduce((a, c) => a + c.shap, 0)).toFixed(4)}]);
+    let cum = S.base_value;
+    const steps = rows.map(r => { const from = cum; cum += r.shap; return {...r, from, to:cum}; });
+    const lo = Math.min(S.base_value, ...steps.map(s => Math.min(s.from, s.to)));
+    const hi = Math.max(S.base_value, ...steps.map(s => Math.max(s.from, s.to)));
+    const span = Math.max(hi - lo, .001), pos = v => ((v - lo) / span) * 100;
+    $('waterfall').innerHTML = `<div class="wf">
+      <div class="wfrow"><span class="lb sub">Base value</span>
+        <span class="wftrack"><i style="left:${pos(S.base_value) - .3}%;width:.6%;background:${C.muted}"></i></span>
+        <span class="vl sub">${S.base_value.toFixed(3)}</span></div>
+      ${steps.map(s => { const a = pos(Math.min(s.from, s.to)), b = pos(Math.max(s.from, s.to)), up = s.shap >= 0;
+        return `<div class="wfrow"><span class="lb" title="${esc(s.label)}">${esc(s.label)}
+            ${s.value != null ? `<i>${s.value}</i>` : ''}</span>
+          <span class="wftrack"><i style="left:${a}%;width:${Math.max(b - a, .6)}%;
+            background:${up ? C.blue : C.accent}"></i></span>
+          <span class="vl ${up ? 'pos' : 'neg'}">${up ? '+' : ''}${s.shap.toFixed(3)}</span></div>`; }).join('')}
+      <div class="wfrow" style="border-top:1px solid var(--line);margin-top:.3rem;padding-top:.4rem">
+        <span class="lb"><b>Prediction</b></span>
+        <span class="wftrack"><i style="left:${pos(S.logit) - .3}%;width:.6%;background:${C.green}"></i></span>
+        <span class="vl"><b>${S.logit.toFixed(3)}</b></span></div>
+    </div>`;
+  }
+  boot();
+})();
+</script>
+
+</body>
+</html>
