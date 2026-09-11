@@ -30,7 +30,7 @@ A presentation and inference layer over the IS-212 *Data & Knowledge Mining* pro
 <img width="1610" height="858" alt="image" src="https://github.com/user-attachments/assets/ac1abc6e-96c2-4f32-b49c-1ac0db88c008" />
 <img width="1592" height="852" alt="image" src="https://github.com/user-attachments/assets/7dbc43db-6112-42df-8eea-04d76e63e3ea" />
 
-Nine pages covering the whole pipeline from the project book: the dataset, descriptive mining,
+Nine pages covering the whole pipeline : the dataset, descriptive mining,
 association rules, storyline clustering, the hybrid recommender, the pre-release success
 classifier with SHAP, model evaluation, and the genre demand forecast.
 
