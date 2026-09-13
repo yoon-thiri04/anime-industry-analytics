@@ -1,9 +1,6 @@
 # Anime Industry Analytics System
 
-An end-to-end **IS-212 Data & Knowledge Mining** project built from MyAnimeList data collected through the **Jikan API**. The system turns raw anime data into industry insights through data mining, text mining, recommendation, predictive modeling, and interactive web-based inference.
-
-- **Supervised by Dr. Hsu Myat Mo**
-
+An end-to-end final year **IS-212 Data & Knowledge Mining** project supervised by **Dr. Hsu Myat Mo**, covering MyAnimeList data collection via the **Jikan API**, data mining, recommendation, predictive modeling, model inference, and web UI development.
 
 # Home Page & Catalogue 
 <img width="1881" height="852" alt="image" src="https://github.com/user-attachments/assets/5567241d-47d9-4461-a910-5a89161b6026" />
