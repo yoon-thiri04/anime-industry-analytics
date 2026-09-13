@@ -1,5 +1,9 @@
-# Anime Industry Analytics System — Web UI
-A presentation and inference layer over the IS-212 *Data & Knowledge Mining* project - **Yoon Thiri Aung, YKPT-22425, University of Computer Studies, Yangon**.
+# Anime Industry Analytics System
+
+An end-to-end **IS-212 Data & Knowledge Mining** project built from MyAnimeList data collected through the **Jikan API**. The system turns raw anime data into industry insights through data mining, text mining, recommendation, predictive modeling, and interactive web-based inference.
+
+- **Supervised by Dr. Hsu Myat Mo**
+- **Yoon Thiri Aung**  · University of Computer Studies, Yangon
 
 
 # Home Page & Catalogue 
